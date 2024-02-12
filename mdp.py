@@ -5,6 +5,21 @@ from gramParser import gramParser
 import sys
 import numpy as np
 
+from dash import Dash, html, no_update
+import dash_cytoscape as cyto
+from dash.dependencies import Input, Output
+
+import logging as log
+from time import sleep
+import threading
+
+
+
+# from server import launch_server
+
+# Configure logging
+log.basicConfig(level=log.INFO, format='%(levelname)s - %(message)s')
+
 class Transition():
 
     def __init__(self, src: str, dst: str, weight: int, action: str) -> None:
@@ -48,6 +63,7 @@ class gramPrintListener(gramListener):
         self.actions = []
         self.transact = []
         self.transnoact = []
+        self.app = None
         
     def enterDefstates(self, ctx):
         states = [str(x) for x in ctx.ID()]
@@ -159,29 +175,130 @@ class gramPrintListener(gramListener):
         return res
 
     def iterate_over_DTMC(self, curr_state):
-        print(f"Starting from {curr_state}")
+        # print(f"Starting from {curr_state}")
         table = self.generate_table()
         probas = self.generate_matrix_DTMC()[table[curr_state]]
-
         next_state = self.states[self.next_iteration(probas)]
-        print(next_state)
-
+        # print(next_state)
+        return next_state
 
     def next_iteration(self, probas):
         p = np.random.rand()
-        print(probas)
-        print(p)
+        print(f"RNG: {p}")
         x = 0
         for i in range(len(probas)):
             if p <= x+probas[i]:
-                print(f"choice is {i}")
+                # print(f"choice is {i}")
                 return i
             else:
                 x += probas[i]
 
+    def run_DTMC(self):
+        curr_state = self.states[0]
+        while True:
+            curr_state =  self.iterate_over_DTMC(curr_state)
+            print(curr_state)
+            sleep(5)
+            # self.simulate_click(curr_state)
+
+
+    def simulate_click(self, node_id):
+        # Get the callback associated with the output
+        callback = self.app.callback_map.get('cytoscape.stylesheet', {}).get('callback')
+
+        # Ensure the callback exists
+        if callback:
+            # Call the callback function directly with the input value
+            callback(node_id, outputs_list=[{'id': 'cytoscape', 'property': 'stylesheet'}])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def launch_server(self):
+        log.info("Launching server")
+        app = Dash(__name__)
+
+        nodes = [ {'data': {'id': s, 'label': s}} for s in self.states]
+        edges = [ {'data': {'source': t.src, 'target': t.dst}} for t in self.transnoact]
+
+        app.layout = html.Div([
+            html.P("Dash Cytoscape:"),
+            cyto.Cytoscape(
+                id='cytoscape',
+                elements=nodes + edges,
+                layout={'name': 'circle'},
+                style={'width': '720px', 'height': '540px'}
+            ),
+            html.Div(id='node-info')
+        ])
+
+        @app.callback(
+            Output('node-info', 'children'),
+            [Input('cytoscape', 'tapNodeData')]
+        )
+        def display_node_info(node_data):
+            if node_data:
+                return f"You clicked on node: {node_data['label']}"
+            else:
+                return ""
+                    
+        @app.callback(
+            Output('cytoscape', 'stylesheet'),
+            [Input('cytoscape', 'tapNodeData')]
+        )
+        def update_stylesheet(node_data):
+            stylesheet = [{
+                'selector': 'node',
+                'style': {
+                    'label': 'data(label)',  # Ensure labels are displayed
+                    'text-valign': 'center',
+                    'color': 'white',
+                    'text-outline-width': 2,
+                    'text-outline-color': 'green',
+                    'content': 'data(label)',  # Display node text
+                    'text-wrap': 'wrap',
+                    'text-max-width': 80
+                }
+            }]
+            if node_data:
+                stylesheet.append({
+                    'selector': f'node[id="{node_data["id"]}"]',
+                    'style': {
+                        'background-color': 'red'
+                    }
+                })
+            return stylesheet
+
+
+
+        self.app = app
+        app.run_server(debug=True, use_reloader=False)
+
+        # self.run_DTMC()
+
+
+
+
+
+
+#TOSELF Works correctly but need to implement a stochastic march over the graph
+
+
 
 
 def main():
+    log.warning('main is starting')
+
     lexer = gramLexer(StdinStream())
     stream = CommonTokenStream(lexer)
     parser = gramParser(stream)
@@ -195,15 +312,28 @@ def main():
         printer.define_total_weights()
         if printer.is_DTMC():
             print("Graph type is DTMC\n")
-            mat = printer.generate_matrix_DTMC()
-            print('\n', mat, '\n')
-            printer.iterate_over_DTMC(printer.states[0])
-            #TODO Visual representation
+            # mat = printer.generate_matrix_DTMC()
+            # print('\n', mat, '\n')
+            # printer.iterate_over_DTMC(printer.states[0])
+            
+            # server_thread = threading.Thread(target=printer.launch_server)
+            # server_thread.start()
+            
+            printer.launch_server()
 
+            # printer.run_DTMC()
+
+
+            #TODO Visual representation
 
         else:
             print("MDP")
             #TODO Implement for the MDP
 
 if __name__ == '__main__':
+    print('\n#####\nin the call\n#####\n')
     main()
+
+
+# Code to run in the cli is :
+#   python mdp.py DTMC.mdp

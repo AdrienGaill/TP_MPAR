@@ -1,2 +1,4 @@
 tp-mpar1/
 __pycache__/
+server.py
+test_plot.py
