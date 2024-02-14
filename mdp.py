@@ -4,6 +4,7 @@ from gramListener import gramListener
 from gramParser import gramParser
 import sys
 import numpy as np
+import json
 
 from dash import Dash, html, no_update
 import dash_cytoscape as cyto
@@ -174,15 +175,16 @@ class gramPrintListener(gramListener):
         # print(res)
         return res
 
-    def iterate_over_DTMC(self, curr_state):
+    def iterate_over_DTMC(self, curr_state_id):
         # print(f"Starting from {curr_state}")
         table = self.generate_table()
-        probas = self.generate_matrix_DTMC()[table[curr_state]]
-        next_state = self.states[self.next_iteration(probas)]
+        probas = self.generate_matrix_DTMC()[table[curr_state_id]]
+        next_state_id = self.states[self.next_iteration(probas)]
         # print(next_state)
-        return next_state
+        return next_state_id
 
     def next_iteration(self, probas):
+        """Returns the index in the table (same as the states property) of the resulting state"""
         p = np.random.rand()
         print(f"RNG: {p}")
         x = 0
@@ -202,21 +204,6 @@ class gramPrintListener(gramListener):
             # self.simulate_click(curr_state)
 
 
-    def simulate_click(self, node_id):
-        # Get the callback associated with the output
-        callback = self.app.callback_map.get('cytoscape.stylesheet', {}).get('callback')
-
-        # Ensure the callback exists
-        if callback:
-            # Call the callback function directly with the input value
-            callback(node_id, outputs_list=[{'id': 'cytoscape', 'property': 'stylesheet'}])
-
-
-
-
-
-
-
 
 
 
@@ -229,52 +216,140 @@ class gramPrintListener(gramListener):
         app = Dash(__name__)
 
         nodes = [ {'data': {'id': s, 'label': s}} for s in self.states]
-        edges = [ {'data': {'source': t.src, 'target': t.dst}} for t in self.transnoact]
+        edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': str(1)}} for t in self.transnoact]
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
-                layout={'name': 'circle'},
+                layout={'name': 'random'}, #or 'circle
                 style={'width': '720px', 'height': '540px'}
             ),
             html.Div(id='node-info')
         ])
 
+        # @app.callback(
+        #     Output('node-info', 'children'),
+        #     [Input('cytoscape', 'tapNodeData')],
+        #     allow_duplicate=True,
+        # )
+        # def display_node_info(node_data):
+        #     if node_data:
+        #         return f"You clicked on node: {node_data['label']}"
+        #     else:
+        #         return ""
+            
+
+
+        def launch_run(node_data):
+            if node_data:
+                
+                id = node_data['label']
+                curr_node = self.iterate_over_DTMC(id)
+                # log.warning(id, curr_node)
+                sleep(2)
+                launch_run({'label': curr_node})
+                return update_stylesheet(curr_node)
+                    
+        
         @app.callback(
             Output('node-info', 'children'),
-            [Input('cytoscape', 'tapNodeData')]
+            # Output('cytoscape', 'stylesheet'),
+            [Input('cytoscape', 'stylesheet')],
+            prevent_initial_call=False,
+            # allow_duplicate=True,
         )
-        def display_node_info(node_data):
-            if node_data:
-                return f"You clicked on node: {node_data['label']}"
-            else:
-                return ""
-                    
+        def next_node(stylesheet):
+            # Extract relevant information from the updated stylesheet
+            # and trigger the desired Python function or execute custom logic
+            # if stylesheet:
+            if True:
+                # Example: Check if background color has been changed
+                for style in stylesheet:
+                    if 'selector' in style:# and style['selector'] == 'node':
+                        if 'style' in style and 'background-color' in style['style']:
+                            #TODO change the stylesheet accordingly to the next node
+
+                            # stylesheet = [{
+                            #     'selector': 'node',
+                            #     'style': {
+                            #         'label': 'data(label)', # Ensure labels are displayed
+                            #         'text-valign': 'center',
+                            #         'color': 'white',
+                            #         'text-outline-width': 1,
+                            #         'text-outline-color': 'black',
+                            #         'content': 'data(label)', # Display node text
+                            #         'text-wrap': 'wrap',
+                            #         'text-max-width': 80
+                            #     }
+                            # }]
+                            
+                            curr_node_id = json.loads((style['selector'][9:-2]).replace("'", '"'))['id']
+
+                            next_node_id = self.iterate_over_DTMC(curr_state_id=curr_node_id) ## Able to generate the next step but not to display it
+
+                            # return update_stylesheet(next_node_id)
+
+                            # stylesheet.append({
+                            #     'selector': f'node[id="{next_node}"]',
+                            #     'style': {
+                            #         'background-color': 'blue'
+                            #     }
+                            # })
+                            # return style['selector']
+                        
+                            # return stylesheet[0]["selector"][0]["node"]
+                            return f"Background color changed to {style['style']['background-color']} for {curr_node_id} and going next to {next_node_id}"
+
+        
+                      
         @app.callback(
             Output('cytoscape', 'stylesheet'),
-            [Input('cytoscape', 'tapNodeData')]
+            [Input('cytoscape', 'tapNodeData')],
+            prevent_initial_call=False,
+            allow_duplicate=True,
         )
-        def update_stylesheet(node_data):
-            stylesheet = [{
-                'selector': 'node',
-                'style': {
-                    'label': 'data(label)',  # Ensure labels are displayed
-                    'text-valign': 'center',
-                    'color': 'white',
-                    'text-outline-width': 2,
-                    'text-outline-color': 'green',
-                    'content': 'data(label)',  # Display node text
-                    'text-wrap': 'wrap',
-                    'text-max-width': 80
-                }
-            }]
-            if node_data:
-                stylesheet.append({
-                    'selector': f'node[id="{node_data["id"]}"]',
+        def update_stylesheet(node_id):
+            stylesheet = [
+                {
+                    'selector': 'node',
                     'style': {
-                        'background-color': 'red'
+                        'label': 'data(label)', # Ensure labels are displayed
+                        'text-valign': 'center',
+                        'color': 'white',
+                        'text-outline-width': 1,
+                        'text-outline-color': 'black',
+                        'content': 'data(label)', # Display node text
+                        'text-wrap': 'wrap',
+                        'text-max-width': 180
+                    }
+                },{
+                    'selector': 'edge',
+                    'style': {
+                        'label': 'data(p)',  # Ensure labels are displayed
+                        'text-valign': 'top',  # Adjust the position of the label
+                        'color': 'black',  # Set the label color
+                        'font-size': '16px',  # Adjust the font size of the label
+                        'text-opacity': 0.8,  # Adjust the opacity of the label
+                        'text-outline-color': 'white',  # Add an outline to the label text
+                        'text-outline-width': 0.5,
+                        'text-background-opacity': 1,  # Adjust the background opacity of the label
+                        'text-background-color': 'white',  # Set the background color of the label
+                        'text-background-padding': '2px',  # Adjust the padding of the label background
+                        'curve-style': 'bezier',  # Set the curve style of the edge
+                        'target-arrow-shape': 'triangle',  # Add arrow to the target (destination) end
+                        'target-arrow-color': 'black',  # Set the color of the target arrow
+                        'line-color': 'black',  # Set the color of the edge line
+                        'width': 2,  # Adjust the width of the edge line
+                    }
+                }
+            ]
+            if node_id:
+                stylesheet.append({
+                    'selector': f'node[id="{node_id}"]',
+                    'style': {
+                        'background-color': 'blue'
                     }
                 })
             return stylesheet
