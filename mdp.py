@@ -6,9 +6,9 @@ import sys
 import numpy as np
 import json
 
-from dash import Dash, html, no_update
+from dash import Dash, html, dcc
 import dash_cytoscape as cyto
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 
 import logging as log
 from time import sleep
@@ -20,6 +20,44 @@ import threading
 
 # Configure logging
 log.basicConfig(level=log.INFO, format='%(levelname)s - %(message)s')
+
+
+base_stylesheet = [
+    {
+        'selector': 'node',
+        'style': {
+            'label': 'data(label)', # Ensure labels are displayed
+            'text-valign': 'center',
+            'color': 'white',
+            'text-outline-width': 1,
+            'text-outline-color': 'black',
+            'content': 'data(label)', # Display node text
+            'text-wrap': 'wrap',
+            'text-max-width': 180
+        }
+    },{
+        'selector': 'edge',
+        'style': {
+            'label': 'data(p)',  # Ensure labels are displayed
+            'text-valign': 'top',  # Adjust the position of the label
+            'color': 'black',  # Set the label color
+            'font-size': '16px',  # Adjust the font size of the label
+            'text-opacity': 0.8,  # Adjust the opacity of the label
+            'text-outline-color': 'white',  # Add an outline to the label text
+            'text-outline-width': 0.5,
+            'text-background-opacity': 1,  # Adjust the background opacity of the label
+            'text-background-color': 'white',  # Set the background color of the label
+            'text-background-padding': '2px',  # Adjust the padding of the label background
+            'curve-style': 'bezier',  # Set the curve style of the edge
+            'target-arrow-shape': 'triangle',  # Add arrow to the target (destination) end
+            'target-arrow-color': 'black',  # Set the color of the target arrow
+            'line-color': 'black',  # Set the color of the edge line
+            'width': 2,  # Adjust the width of the edge line
+        }
+    }
+]
+
+
 
 class Transition():
 
@@ -117,6 +155,7 @@ class gramPrintListener(gramListener):
     def check_validity(self):
         is_valid = True
         print("Checking debut")
+        #TODO check only one occurence of the dest
 
         for s in self.states:
             with_action, without_action = False, False
@@ -176,17 +215,16 @@ class gramPrintListener(gramListener):
         return res
 
     def iterate_over_DTMC(self, curr_state_id):
-        # print(f"Starting from {curr_state}")
         table = self.generate_table()
         probas = self.generate_matrix_DTMC()[table[curr_state_id]]
         next_state_id = self.states[self.next_iteration(probas)]
-        # print(next_state)
+        print(f"Res is {next_state_id}")
         return next_state_id
 
     def next_iteration(self, probas):
         """Returns the index in the table (same as the states property) of the resulting state"""
         p = np.random.rand()
-        print(f"RNG: {p}")
+        # print(f"RNG: {p}")
         x = 0
         for i in range(len(probas)):
             if p <= x+probas[i]:
@@ -205,175 +243,84 @@ class gramPrintListener(gramListener):
 
 
 
-
-
-
-
-
-
     def launch_server(self):
         log.info("Launching server")
         app = Dash(__name__)
 
         nodes = [ {'data': {'id': s, 'label': s}} for s in self.states]
         edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': str(1)}} for t in self.transnoact]
+        starting_node_id = self.states[0]
+        time_interval = 3
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
-                layout={'name': 'random'}, #or 'circle
-                style={'width': '720px', 'height': '540px'}
+                layout={'name': 'circle'}, #'random' or 'circle'
+                style={'width': '1080px', 'height': '720px'}
             ),
-            html.Div(id='node-info')
+            html.Div(id='node-info'),
+            # html.Div(id='state-info'),
+            # dcc.Store(id='current-node-id', data=starting_node_id),  # Store to trigger the callback
+            dcc.Interval(
+                id='interval',
+                interval=time_interval*1000, # in milliseconds
+                n_intervals=0,
+            )
         ])
 
-        # @app.callback(
-        #     Output('node-info', 'children'),
-        #     [Input('cytoscape', 'tapNodeData')],
-        #     allow_duplicate=True,
-        # )
-        # def display_node_info(node_data):
-        #     if node_data:
-        #         return f"You clicked on node: {node_data['label']}"
-        #     else:
-        #         return ""
-            
 
-
-        def launch_run(node_data):
-            if node_data:
-                
-                id = node_data['label']
-                curr_node = self.iterate_over_DTMC(id)
-                # log.warning(id, curr_node)
-                sleep(2)
-                launch_run({'label': curr_node})
-                return update_stylesheet(curr_node)
-                    
-        
-        @app.callback(
-            Output('node-info', 'children'),
-            # Output('cytoscape', 'stylesheet'),
-            [Input('cytoscape', 'stylesheet')],
-            prevent_initial_call=False,
-            # allow_duplicate=True,
-        )
-        def next_node(stylesheet):
-            # Extract relevant information from the updated stylesheet
-            # and trigger the desired Python function or execute custom logic
-            # if stylesheet:
-            if True:
-                # Example: Check if background color has been changed
-                for style in stylesheet:
-                    if 'selector' in style:# and style['selector'] == 'node':
-                        if 'style' in style and 'background-color' in style['style']:
-                            #TODO change the stylesheet accordingly to the next node
-
-                            # stylesheet = [{
-                            #     'selector': 'node',
-                            #     'style': {
-                            #         'label': 'data(label)', # Ensure labels are displayed
-                            #         'text-valign': 'center',
-                            #         'color': 'white',
-                            #         'text-outline-width': 1,
-                            #         'text-outline-color': 'black',
-                            #         'content': 'data(label)', # Display node text
-                            #         'text-wrap': 'wrap',
-                            #         'text-max-width': 80
-                            #     }
-                            # }]
-                            
-                            curr_node_id = json.loads((style['selector'][9:-2]).replace("'", '"'))['id']
-
-                            next_node_id = self.iterate_over_DTMC(curr_state_id=curr_node_id) ## Able to generate the next step but not to display it
-
-                            # return update_stylesheet(next_node_id)
-
-                            # stylesheet.append({
-                            #     'selector': f'node[id="{next_node}"]',
-                            #     'style': {
-                            #         'background-color': 'blue'
-                            #     }
-                            # })
-                            # return style['selector']
-                        
-                            # return stylesheet[0]["selector"][0]["node"]
-                            return f"Background color changed to {style['style']['background-color']} for {curr_node_id} and going next to {next_node_id}"
-
-        
-                      
         @app.callback(
             Output('cytoscape', 'stylesheet'),
-            [Input('cytoscape', 'tapNodeData')],
+            [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
             prevent_initial_call=False,
-            allow_duplicate=True,
         )
+        def next_node(_, stylesheet):
+            log.info("\n  in next_node")
+
+            if stylesheet:
+                for style in stylesheet:
+                    if 'style' in style and 'background-color' in style['style']:
+                        print(f"style is {style}")
+                        
+                        # curr_node_id = json.loads((style['selector'][9:-2]).replace("'", '"'))['id'] # Previous way of working with stylesheets
+                        curr_node_id = style['selector'][9:-2]
+                        next_node_id = self.iterate_over_DTMC(curr_state_id=curr_node_id) ## Able to generate the next step but not to display it
+                        print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
+
+                        return update_stylesheet(next_node_id)
+                    
+                        return f"Background color changed to {style['style']['background-color']} for {curr_node_id} and going next to {next_node_id}"
+                        return f"Next node id {next_node_id}"
+            else:
+                print("Only for init")
+                return update_stylesheet(starting_node_id)
+                return ""
+            
+
         def update_stylesheet(node_id):
-            stylesheet = [
-                {
-                    'selector': 'node',
-                    'style': {
-                        'label': 'data(label)', # Ensure labels are displayed
-                        'text-valign': 'center',
-                        'color': 'white',
-                        'text-outline-width': 1,
-                        'text-outline-color': 'black',
-                        'content': 'data(label)', # Display node text
-                        'text-wrap': 'wrap',
-                        'text-max-width': 180
-                    }
-                },{
-                    'selector': 'edge',
-                    'style': {
-                        'label': 'data(p)',  # Ensure labels are displayed
-                        'text-valign': 'top',  # Adjust the position of the label
-                        'color': 'black',  # Set the label color
-                        'font-size': '16px',  # Adjust the font size of the label
-                        'text-opacity': 0.8,  # Adjust the opacity of the label
-                        'text-outline-color': 'white',  # Add an outline to the label text
-                        'text-outline-width': 0.5,
-                        'text-background-opacity': 1,  # Adjust the background opacity of the label
-                        'text-background-color': 'white',  # Set the background color of the label
-                        'text-background-padding': '2px',  # Adjust the padding of the label background
-                        'curve-style': 'bezier',  # Set the curve style of the edge
-                        'target-arrow-shape': 'triangle',  # Add arrow to the target (destination) end
-                        'target-arrow-color': 'black',  # Set the color of the target arrow
-                        'line-color': 'black',  # Set the color of the edge line
-                        'width': 2,  # Adjust the width of the edge line
-                    }
-                }
-            ]
+            stylesheet = base_stylesheet.copy()
+            log.info("\n  in update_stylesheet")
+            if isinstance(node_id, dict):
+                node_id = node_id['id']
             if node_id:
+                print(f"node id is {node_id}")
                 stylesheet.append({
                     'selector': f'node[id="{node_id}"]',
                     'style': {
-                        'background-color': 'blue'
+                        'background-color': 'red'
                     }
                 })
             return stylesheet
 
 
-
         self.app = app
         app.run_server(debug=True, use_reloader=False)
-
-        # self.run_DTMC()
-
-
-
-
-
-
-#TOSELF Works correctly but need to implement a stochastic march over the graph
-
 
 
 
 def main():
-    log.warning('main is starting')
-
     lexer = gramLexer(StdinStream())
     stream = CommonTokenStream(lexer)
     parser = gramParser(stream)
@@ -387,19 +334,12 @@ def main():
         printer.define_total_weights()
         if printer.is_DTMC():
             print("Graph type is DTMC\n")
-            # mat = printer.generate_matrix_DTMC()
-            # print('\n', mat, '\n')
-            # printer.iterate_over_DTMC(printer.states[0])
-            
-            # server_thread = threading.Thread(target=printer.launch_server)
-            # server_thread.start()
+            mat = printer.generate_matrix_DTMC()
+            print('\n', mat, '\n')
+
             
             printer.launch_server()
 
-            # printer.run_DTMC()
-
-
-            #TODO Visual representation
 
         else:
             print("MDP")
@@ -411,4 +351,4 @@ if __name__ == '__main__':
 
 
 # Code to run in the cli is :
-#   python mdp.py DTMC.mdp
+# cmd /c 'python mdp.py < DTMC.mdp'
