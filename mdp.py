@@ -48,16 +48,18 @@ base_stylesheet = [
             'text-background-opacity': 1,  # Adjust the background opacity of the label
             'text-background-color': 'white',  # Set the background color of the label
             'text-background-padding': '2px',  # Adjust the padding of the label background
-            'curve-style': 'bezier',  # Set the curve style of the edge
+            'curve-style': 'unbundled-bezier',  # Set the curve style of the edge
             'target-arrow-shape': 'triangle',  # Add arrow to the target (destination) end
             'target-arrow-color': 'black',  # Set the color of the target arrow
             'line-color': 'black',  # Set the color of the edge line
             'width': 2,  # Adjust the width of the edge line
+            'control-point-step-size': 80  # Adjust the distance between control points for more curvature
         }
     }
 ]
 
-
+#TODO Color potential edges
+#TODO Color last edge
 
 class Transition():
 
@@ -102,13 +104,11 @@ class gramPrintListener(gramListener):
         self.actions = []
         self.transact = []
         self.transnoact = []
-        self.app = None
         
     def enterDefstates(self, ctx):
         states = [str(x) for x in ctx.ID()]
         self.states = states
         print(f"States: {states}")
-
 
     def enterDefactions(self, ctx):
         actions = [str(x) for x in ctx.ID()]
@@ -214,9 +214,9 @@ class gramPrintListener(gramListener):
         # print(res)
         return res
 
-    def iterate_over_DTMC(self, curr_state_id):
+    def next_state_DTMC(self, curr_state_id, proba_matrix):
         table = self.generate_table()
-        probas = self.generate_matrix_DTMC()[table[curr_state_id]]
+        probas = proba_matrix[table[curr_state_id]]
         next_state_id = self.states[self.next_iteration(probas)]
         print(f"Res is {next_state_id}")
         return next_state_id
@@ -224,98 +224,107 @@ class gramPrintListener(gramListener):
     def next_iteration(self, probas):
         """Returns the index in the table (same as the states property) of the resulting state"""
         p = np.random.rand()
+
         # print(f"RNG: {p}")
         x = 0
-        for i in range(len(probas)):
+        N = len(probas)
+        for i in range(N):
             if p <= x+probas[i]:
                 # print(f"choice is {i}")
                 return i
             else:
                 x += probas[i]
-
-    def run_DTMC(self):
-        curr_state = self.states[0]
-        while True:
-            curr_state =  self.iterate_over_DTMC(curr_state)
-            print(curr_state)
-            sleep(5)
-            # self.simulate_click(curr_state)
+        return N-1 # Ensure that even with an unfortunate rounding, it returns a value
 
 
+    def find_edge(edges, src, dst):
+        for edge in edges:
+            if edge['data']['source']==src and edge['data']['target']==dst:
+                return edge
 
-    def launch_server(self):
+    def launch_server(self, mat):
         log.info("Launching server")
         app = Dash(__name__)
 
         nodes = [ {'data': {'id': s, 'label': s}} for s in self.states]
-        edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': str(1)}} for t in self.transnoact]
+        edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transnoact]
+        # edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': round(t.weight/t.total_weight, 2)}} for t in self.transnoact]
         starting_node_id = self.states[0]
         time_interval = 3
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
+            html.Div(id='process-info'),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
                 layout={'name': 'circle'}, #'random' or 'circle'
-                style={'width': '1080px', 'height': '720px'}
+                style={'width': '900px', 'height': '800px'}, #TODO be
             ),
-            html.Div(id='node-info'),
             # html.Div(id='state-info'),
-            # dcc.Store(id='current-node-id', data=starting_node_id),  # Store to trigger the callback
+            # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
             dcc.Interval(
                 id='interval',
                 interval=time_interval*1000, # in milliseconds
                 n_intervals=0,
             )
         ])
-
-
-        @app.callback(
-            Output('cytoscape', 'stylesheet'),
-            [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
-            prevent_initial_call=False,
-        )
-        def next_node(_, stylesheet):
-            log.info("\n  in next_node")
-
-            if stylesheet:
-                for style in stylesheet:
-                    if 'style' in style and 'background-color' in style['style']:
-                        print(f"style is {style}")
-                        
-                        # curr_node_id = json.loads((style['selector'][9:-2]).replace("'", '"'))['id'] # Previous way of working with stylesheets
-                        curr_node_id = style['selector'][9:-2]
-                        next_node_id = self.iterate_over_DTMC(curr_state_id=curr_node_id) ## Able to generate the next step but not to display it
-                        print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
-
-                        return update_stylesheet(next_node_id)
-                    
-                        return f"Background color changed to {style['style']['background-color']} for {curr_node_id} and going next to {next_node_id}"
-                        return f"Next node id {next_node_id}"
-            else:
-                print("Only for init")
-                return update_stylesheet(starting_node_id)
-                return ""
             
 
-        def update_stylesheet(node_id):
+        def update_stylesheet(previous_node_id, current_node_id):
             stylesheet = base_stylesheet.copy()
             log.info("\n  in update_stylesheet")
-            if isinstance(node_id, dict):
-                node_id = node_id['id']
-            if node_id:
-                print(f"node id is {node_id}")
+            # if isinstance(current_node_id, dict):
+            #     current_node_id = current_node_id['id']
+            if current_node_id:
+                print(f"node id is {current_node_id}")
                 stylesheet.append({
-                    'selector': f'node[id="{node_id}"]',
+                    'selector': f'node[id="{current_node_id}"]',
                     'style': {
                         'background-color': 'red'
                     }
                 })
+                stylesheet.append({
+                        'selector': f'edge[source="{current_node_id}"]',
+                        'style': {
+                            'target-arrow-color': 'red',  # Set the color of the target arrow
+                            'line-color': 'red',
+                        }
+                })
+                if previous_node_id:
+                    # edge_id = previous_node_id+current_node_id
+                    print(f"previous edge is {previous_node_id} to {current_node_id}")
+                    stylesheet.append({
+                        'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
+                        'style': {
+                            'target-arrow-color': 'blue',  # Set the color of the target arrow
+                            'line-color': 'blue',
+                        }
+                    })
             return stylesheet
 
 
-        self.app = app
+        @app.callback(
+            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+            [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
+            prevent_initial_call=False,
+        )
+        def next_node(n_intervals, stylesheet):
+            log.info("\n  in next_node")
+            iteration_str = f"Currently at iteration {n_intervals}"
+            print(iteration_str)
+            if stylesheet:
+                for style in stylesheet:
+                    if 'style' in style and 'background-color' in style['style']: # Get the value of the current node i.e. with a modified background
+                        # print(f"style is {style}")
+                        curr_node_id = style['selector'][9:-2]
+                        next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
+                        print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
+                        return update_stylesheet(curr_node_id, next_node_id), iteration_str
+            else:
+                print("Only for init")
+                return update_stylesheet(None, starting_node_id), iteration_str
+
         app.run_server(debug=True, use_reloader=False)
 
 
@@ -337,12 +346,11 @@ def main():
             mat = printer.generate_matrix_DTMC()
             print('\n', mat, '\n')
 
-            
-            printer.launch_server()
+            printer.launch_server(mat)
 
 
         else:
-            print("MDP")
+            print("Graph type is MDP")
             #TODO Implement for the MDP
 
 if __name__ == '__main__':
