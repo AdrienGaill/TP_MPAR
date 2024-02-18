@@ -22,7 +22,7 @@ import threading
 log.basicConfig(level=log.INFO, format='%(levelname)s - %(message)s')
 
 
-base_stylesheet = [
+base_stylesheet_DTMC = [
     {
         'selector': 'node',
         'style': {
@@ -57,6 +57,60 @@ base_stylesheet = [
         }
     }
 ]
+
+base_stylesheet_MDP = [
+    {
+        'selector': 'node[type="state"]',
+        'style': {
+            'label': 'data(label)',
+            'text-valign': 'center',
+            'color': 'white',
+            'background-color': 'white',
+            'border-color': 'black',
+            'border-width': 1,
+            'text-outline-color': 'black',
+            'text-outline-width': 1,
+            'content': 'data(label)',
+            'text-wrap': 'wrap',
+            'text-max-width': 180,
+        }
+    },
+    {
+        'selector': 'node[type="action"]',
+        'style': {
+            'label': 'data(label)',
+            'text-valign': 'center',
+            'color': 'black',
+            'background-color': 'black',
+            'text-outline-color': 'white',
+            'text-outline-width': 1,
+            'content': 'data(label)',
+            'text-wrap': 'wrap',
+            'text-max-width': 180
+        }
+    },{
+        'selector': 'edge',
+        'style': {
+            'label': 'data(p)',  # Ensure labels are displayed
+            'text-valign': 'top',  # Adjust the position of the label
+            'color': 'black',  # Set the label color
+            'font-size': '16px',  # Adjust the font size of the label
+            'text-opacity': 0.8,  # Adjust the opacity of the label
+            'text-outline-color': 'white',  # Add an outline to the label text
+            'text-outline-width': 0.5,
+            'text-background-opacity': 1,  # Adjust the background opacity of the label
+            'text-background-color': 'white',  # Set the background color of the label
+            'text-background-padding': '2px',  # Adjust the padding of the label background
+            'curve-style': 'unbundled-bezier',  # Set the curve style of the edge
+            'target-arrow-shape': 'triangle',  # Add arrow to the target (destination) end
+            'target-arrow-color': 'black',  # Set the color of the target arrow
+            'line-color': 'black',  # Set the color of the edge line
+            'width': 2,  # Adjust the width of the edge line
+            'control-point-step-size': 80  # Adjust the distance between control points for more curvature
+        }
+    }
+]
+
 
 #TODO Color potential edges
 #TODO Color last edge
@@ -156,7 +210,7 @@ class gramPrintListener(gramListener):
         is_valid = True
         print("Checking debut")
         #TODO check only one occurence of the dest
-
+        #TODO Check that no action is named like a state
         for s in self.states:
             with_action, without_action = False, False
 
@@ -192,15 +246,21 @@ class gramPrintListener(gramListener):
 
     def define_total_weights(self):
         is_DTMC = self.is_DTMC()
-        for s in self.states:
-            if is_DTMC:
-                to_edit = [t for t in self.transnoact if t.src==s]
-            else:
-                to_edit = [t for t in self.transact if t.src==s]
 
+        #TODO Prettify this function
+
+        for s in self.states:
+            
+            to_edit = [t for t in self.transnoact if t.src==s]
             total_weight = sum([t.weight for t in to_edit])
             for t in to_edit:
                 t.total_weight = total_weight
+            if not is_DTMC:
+                for a in self.actions:
+                    to_edit = [t for t in self.transact if t.src==s and t.action==a]
+                    total_weight = sum([t.weight for t in to_edit])
+                    for t in to_edit:
+                        t.total_weight = total_weight
 
     def generate_matrix_DTMC(self):
         n = len(self.states)
@@ -242,7 +302,7 @@ class gramPrintListener(gramListener):
             if edge['data']['source']==src and edge['data']['target']==dst:
                 return edge
 
-    def launch_server(self, mat):
+    def launch_server_DTMC(self, mat):
         log.info("Launching server")
         app = Dash(__name__)
 
@@ -259,7 +319,7 @@ class gramPrintListener(gramListener):
                 id='cytoscape',
                 elements=nodes + edges,
                 layout={'name': 'circle'}, #'random' or 'circle'
-                style={'width': '900px', 'height': '800px'}, #TODO be
+                style={'width': '900px', 'height': '800px'}, #TODO Ensure a nice display
             ),
             # html.Div(id='state-info'),
             # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
@@ -272,7 +332,7 @@ class gramPrintListener(gramListener):
             
 
         def update_stylesheet(previous_node_id, current_node_id):
-            stylesheet = base_stylesheet.copy()
+            stylesheet = base_stylesheet_DTMC.copy()
             log.info("\n  in update_stylesheet")
             # if isinstance(current_node_id, dict):
             #     current_node_id = current_node_id['id']
@@ -329,6 +389,110 @@ class gramPrintListener(gramListener):
 
 
 
+
+    def launch_server_MDP(self):
+        log.info("Launching server")
+        app = Dash(__name__)
+        states = [{'data': {'id': s, 'label': s, 'type': 'state'}} for s in self.states]
+        actions = [{'data': {'id': a,'label': a,'type': 'action'}} for a in self.actions]
+        nodes = states + actions
+        for n in nodes:
+            print(n)
+
+        transnoact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}"}} for t in self.transnoact]
+        transact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}",'action': t.action}} for t in self.transact]
+        pre_actions = [{'data': {'source': t.src,'target': t.action}} for t in self.transact]
+        post_actions = [{'data': {'source': t.action,'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transact]
+        edges = transnoact + pre_actions + post_actions #TODO Colour the 2 types of action related edges
+        for e in edges:
+            print(e)
+
+        starting_node_id = self.states[0]
+        time_interval = 3
+
+        app.layout = html.Div([
+            html.P("Dash Cytoscape:"),
+            html.Div(id='process-info'),
+            cyto.Cytoscape(
+                id='cytoscape',
+                elements=nodes + edges,
+                layout={'name': 'circle'}, #'random' or 'circle'
+                style={'width': '900px', 'height': '800px'}, #TODO Ensure a nice display
+            ),
+            # html.Div(id='state-info'),
+            # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
+            dcc.Interval(
+                id='interval',
+                interval=time_interval*1000, # in milliseconds
+                n_intervals=0,
+            )
+        ])
+            
+
+        def update_stylesheet(previous_node_id, current_node_id):
+            stylesheet = base_stylesheet_MDP.copy()
+            log.info("\n  in update_stylesheet")
+            # if isinstance(current_node_id, dict):
+            #     current_node_id = current_node_id['id']
+            if current_node_id:
+                print(f"node id is {current_node_id}")
+                stylesheet.append({
+                    'selector': f'node[id="{current_node_id}"]',
+                    'style': {
+                        'background-color': 'red',
+                        'border-color': 'red',
+                        'border-width': 1,
+                    }
+                })
+                stylesheet.append({
+                        'selector': f'edge[source="{current_node_id}"]',
+                        'style': {
+                            'target-arrow-color': 'red',  # Set the color of the target arrow
+                            'line-color': 'red',
+                        }
+                })
+                if previous_node_id:
+                    # edge_id = previous_node_id+current_node_id
+                    print(f"previous edge is {previous_node_id} to {current_node_id}")
+                    stylesheet.append({
+                        'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
+                        'style': {
+                            'target-arrow-color': 'blue',  # Set the color of the target arrow
+                            'line-color': 'blue',
+                        }
+                    })
+            return stylesheet
+
+
+        @app.callback(
+            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+            [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
+            prevent_initial_call=False,
+        )
+        def next_node(n_intervals, stylesheet):
+            log.info("\n  in next_node")
+            iteration_str = f"Currently at iteration {n_intervals}"
+            return update_stylesheet(None, starting_node_id), iteration_str
+
+            print(iteration_str)
+            if stylesheet:
+                for style in stylesheet:
+                    if style['style'].get('background-color')=='red': # Get the value of the current node i.e. with a modified background
+                        # print(f"style is {style}")
+                        curr_node_id = style['selector'][9:-2]
+                        next_node_id = curr_node_id
+                        # next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
+                        print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
+                        return update_stylesheet(curr_node_id, next_node_id), iteration_str
+            else:
+                print("Only for init")
+                return update_stylesheet(None, starting_node_id), iteration_str
+
+        app.run_server(debug=True, use_reloader=False)
+
+
+
+
 def main():
     lexer = gramLexer(StdinStream())
     stream = CommonTokenStream(lexer)
@@ -346,11 +510,13 @@ def main():
             mat = printer.generate_matrix_DTMC()
             print('\n', mat, '\n')
 
-            printer.launch_server(mat)
+            printer.launch_server_DTMC(mat)
 
 
         else:
             print("Graph type is MDP")
+            printer.launch_server_MDP()
+
             #TODO Implement for the MDP
 
 if __name__ == '__main__':
