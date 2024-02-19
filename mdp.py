@@ -5,6 +5,7 @@ from gramParser import gramParser
 import sys
 import numpy as np
 import json
+import os
 
 from dash import Dash, html, dcc
 import dash_cytoscape as cyto
@@ -74,6 +75,8 @@ base_stylesheet_MDP = [
             'content': 'data(label)',
             'text-wrap': 'wrap',
             'text-max-width': 180,
+            'width': '40px',
+            'height': '40px',
         }
     },
     {
@@ -87,7 +90,9 @@ base_stylesheet_MDP = [
             'text-outline-width': 1,
             'content': 'data(label)',
             'text-wrap': 'wrap',
-            'text-max-width': 180
+            'text-max-width': 180,
+            'width': '40px',
+            'height': '40px',
         }
     },{
         'selector': 'edge',
@@ -154,11 +159,11 @@ class Transition():
 
 class gramPrintListener(gramListener):
 
-    ### Start of DEPRECATED functions
+    ### Start of DEPRECATED functions 
     def generate_table(self):
         """
             Returns a table allowing each state to have an unique index
-            DEPRECATED
+            !DEPRECATED
         """
         table = {}
         for i in range(len(self.states)):
@@ -168,7 +173,7 @@ class gramPrintListener(gramListener):
     def generate_matrix_DTMC(self):
         """
             Returns the transition matrix with the corresponding weights of the DTMC
-            DEPRECATED
+            !DEPRECATED
         """
         n = len(self.states)
         table = self.generate_table()
@@ -177,14 +182,12 @@ class gramPrintListener(gramListener):
             i = table[t.src]
             j = table[t.dst]
             res[i][j] = t.weight/t.total_weight
-
-        # print(res)
         return res
 
     def next_iteration(self, probas):
         """
             Returns the index in the table (same as the states property) of the resulting state
-            DEPRECATED    
+            !DEPRECATED    
         """
 
         p = np.random.rand()
@@ -199,9 +202,7 @@ class gramPrintListener(gramListener):
                 x += probas[i]
         print(f"choice is {N-1}")
         return N-1 # Ensure that even with an unfortunate rounding, it returns a value
-
     ### End of DEPRECATED functions
-
 
     def __init__(self):
         self.states = []
@@ -313,7 +314,7 @@ class gramPrintListener(gramListener):
         p = choices(transitions, weights=weights)
         print(p[0].dst)
         return p[0].dst
-   
+
     def next_state(self, curr_state_id, action):
         """Returns the id of the next state based on the current state and the chosen action if one"""
         if action:
@@ -325,6 +326,10 @@ class gramPrintListener(gramListener):
         return next_state_id
 
     #TODO add a legend for DTMC and for MDP graphs
+
+    def are_next_nodes_actions(self, curr_state_id):
+        
+        return 0
 
     def launch_server_DTMC(self):
         log.info("Launching server")
@@ -431,7 +436,7 @@ class gramPrintListener(gramListener):
             print(e)
 
         starting_node_id = self.states[0]
-        time_interval = 3
+        time_interval = 20
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"), #TODO add the mdp file name here 
@@ -451,7 +456,6 @@ class gramPrintListener(gramListener):
             )
         ])
             
-
         def update_stylesheet(previous_node_id, current_node_id):
             stylesheet = base_stylesheet_MDP.copy()
             log.info("\n  in update_stylesheet")
@@ -463,8 +467,8 @@ class gramPrintListener(gramListener):
                         'background-color': 'red',
                         'border-color': 'red',
                         'border-width': 1,
-                        'width': '80px',
-                        'height': '80px',
+                        'width': '50px',
+                        'height': '50px',
                     }
                 })
                 stylesheet.append({
@@ -489,13 +493,17 @@ class gramPrintListener(gramListener):
 
         @app.callback(
             [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
-            [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
+            [Input('interval', 'n_intervals'), Input('cytoscape', 'tapNodeData'), Input('cytoscape', 'stylesheet')],
             prevent_initial_call=False,
         )
-        def next_node(n_intervals, stylesheet):
+        def next_node(n_intervals, tapped_node, stylesheet):
             log.info("\n  in next_node")
             iteration_str = f"Currently at iteration {n_intervals}"
-            return update_stylesheet(None, starting_node_id), iteration_str
+            if tapped_node:
+                print(f"tapped node is {tapped_node}")
+            else:
+                print("no node")
+            # return update_stylesheet(None, starting_node_id), iteration_str
 
             print(iteration_str)
             if stylesheet:
@@ -503,20 +511,56 @@ class gramPrintListener(gramListener):
                     if style['style'].get('background-color')=='red': # Get the value of the current node i.e. with a modified background
                         # print(f"style is {style}")
                         curr_node_id = style['selector'][9:-2]
-                        next_node_id = curr_node_id
-                        # next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
-                        print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
-                        return update_stylesheet(curr_node_id, next_node_id), iteration_str
+                        break # We found the current node
+            
+            if self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap  on an action node
+                if tapped_node['type']=='action': # We tapped an anction
+
+                    #TODO Select the next node using the corresponding probabilities
+
+
+                    return update_stylesheet(None, starting_node_id), iteration_str #?
+
+
+
+
+
+                next_node_id = curr_node_id
+                # next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
+                print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
+                return update_stylesheet(curr_node_id, next_node_id), iteration_str
+            
+
             else:
                 print("Only for init")
                 return update_stylesheet(None, starting_node_id), iteration_str
+    
+
+        # @app.callback(
+        #         [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+        #         [Input('interval', 'n_intervals'), Input('cytoscape', 'tapNodeData'), Input('cytoscape', 'stylesheet')],
+        #         prevent_initial_call=False,
+        # )
+        # def select_action(self, current_node_id, stylesheet):
+            
+        #     action = 0
+        #     return action
+
+
+
+
 
         app.run_server(debug=True, use_reloader=False)
 
 
 
 
+
+
+
+
 def main():
+
     lexer = gramLexer(StdinStream())
     stream = CommonTokenStream(lexer)
     parser = gramParser(stream)
@@ -530,19 +574,17 @@ def main():
         printer.define_total_weights()
         if printer.is_DTMC():
             print("Graph type is DTMC\n")
-            # mat = printer.generate_matrix_DTMC()
-            # print('\n', mat, '\n')
-
             printer.launch_server_DTMC()
 
 
         else:
             print("Graph type is MDP")
             printer.launch_server_MDP()
-
             #TODO Implement for the MDP
 
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     print('\n#####\nin the call\n#####\n')
     main()
 
