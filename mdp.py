@@ -11,9 +11,7 @@ import dash_cytoscape as cyto
 from dash.dependencies import Input, Output, State
 
 import logging as log
-from time import sleep
-import threading
-
+from random import choices
 
 
 # from server import launch_server
@@ -33,7 +31,10 @@ base_stylesheet_DTMC = [
             'text-outline-color': 'black',
             'content': 'data(label)', # Display node text
             'text-wrap': 'wrap',
-            'text-max-width': 180
+            'font-size': '20px',  # Set the font size to 20 pixels
+            'text-max-width': 180,
+            'width': '40px',
+            'height': '40px',
         }
     },{
         'selector': 'edge',
@@ -153,6 +154,55 @@ class Transition():
 
 class gramPrintListener(gramListener):
 
+    ### Start of DEPRECATED functions
+    def generate_table(self):
+        """
+            Returns a table allowing each state to have an unique index
+            DEPRECATED
+        """
+        table = {}
+        for i in range(len(self.states)):
+            table[self.states[i]] = i
+        return table
+
+    def generate_matrix_DTMC(self):
+        """
+            Returns the transition matrix with the corresponding weights of the DTMC
+            DEPRECATED
+        """
+        n = len(self.states)
+        table = self.generate_table()
+        res = np.zeros(shape=(n, n))
+        for t in self.transnoact:
+            i = table[t.src]
+            j = table[t.dst]
+            res[i][j] = t.weight/t.total_weight
+
+        # print(res)
+        return res
+
+    def next_iteration(self, probas):
+        """
+            Returns the index in the table (same as the states property) of the resulting state
+            DEPRECATED    
+        """
+
+        p = np.random.rand()
+        print(f"\nRNG: {p}")
+        x = 0
+        N = len(probas)
+        for i in range(N):
+            if p <= x+probas[i]:
+                print(f"choice is {i}")
+                return i
+            else:
+                x += probas[i]
+        print(f"choice is {N-1}")
+        return N-1 # Ensure that even with an unfortunate rounding, it returns a value
+
+    ### End of DEPRECATED functions
+
+
     def __init__(self):
         self.states = []
         self.actions = []
@@ -209,7 +259,7 @@ class gramPrintListener(gramListener):
     def check_validity(self):
         is_valid = True
         print("Checking debut")
-        #TODO check only one occurence of the dest
+        #TODO check only one occurence of each dst for a given scr
         #TODO Check that no action is named like a state
         for s in self.states:
             with_action, without_action = False, False
@@ -238,12 +288,6 @@ class gramPrintListener(gramListener):
     def is_DTMC(self):
         return len(self.transact)==0
 
-    def generate_table(self):
-        table = {}
-        for i in range(len(self.states)):
-            table[self.states[i]] = i
-        return table
-
     def define_total_weights(self):
         is_DTMC = self.is_DTMC()
 
@@ -262,44 +306,27 @@ class gramPrintListener(gramListener):
                     for t in to_edit:
                         t.total_weight = total_weight
 
-    def generate_matrix_DTMC(self):
-        #TODO To deprecate to be able to use MDP
-        n = len(self.states)
-        table = self.generate_table()
-        res = np.zeros(shape=(n, n))
-        for t in self.transnoact:
-            i = table[t.src]
-            j = table[t.dst]
-            res[i][j] = t.weight/t.total_weight
-
-        # print(res)
-        return res
-
-    def next_state_DTMC(self, curr_state_id, proba_matrix):
-        table = self.generate_table()
-        probas = proba_matrix[table[curr_state_id]]
-        next_state_id = self.states[self.next_iteration(probas)]
+    def choose_iteration(self, transitions):
+        """Returns the resulting state id based on the possible transitions"""
+        weights = [t.weight for t in transitions]
+        print(f"Weights are {weights}")
+        p = choices(transitions, weights=weights)
+        print(p[0].dst)
+        return p[0].dst
+   
+    def next_state(self, curr_state_id, action):
+        """Returns the id of the next state based on the current state and the chosen action if one"""
+        if action:
+            trans = [t for t in self.transact if t.src==curr_state_id and t.action==action] 
+        else:
+            trans = [t for t in self.transnoact if t.src==curr_state_id] #TODO Need to keep the order of the probas
+        next_state_id = self.choose_iteration(trans)
         print(f"Res is {next_state_id}")
         return next_state_id
 
-    def next_iteration(self, probas):
-        """Returns the index in the table (same as the states property) of the resulting state"""
-        p = np.random.rand()
-
-        # print(f"RNG: {p}")
-        x = 0
-        N = len(probas)
-        for i in range(N):
-            if p <= x+probas[i]:
-                # print(f"choice is {i}")
-                return i
-            else:
-                x += probas[i]
-        return N-1 # Ensure that even with an unfortunate rounding, it returns a value
-
     #TODO add a legend for DTMC and for MDP graphs
 
-    def launch_server_DTMC(self, mat):
+    def launch_server_DTMC(self):
         log.info("Launching server")
         app = Dash(__name__)
 
@@ -307,7 +334,7 @@ class gramPrintListener(gramListener):
         edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transnoact]
         # edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': round(t.weight/t.total_weight, 2)}} for t in self.transnoact]
         starting_node_id = self.states[0]
-        time_interval = 3
+        time_interval = 5
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
@@ -331,30 +358,30 @@ class gramPrintListener(gramListener):
         def update_stylesheet(previous_node_id, current_node_id):
             stylesheet = base_stylesheet_DTMC.copy()
             log.info("\n  in update_stylesheet")
-            # if isinstance(current_node_id, dict):
-            #     current_node_id = current_node_id['id']
             if current_node_id:
                 print(f"node id is {current_node_id}")
                 stylesheet.append({
                     'selector': f'node[id="{current_node_id}"]',
                     'style': {
-                        'background-color': 'red'
+                        'background-color': 'red',
+                        'width': '50px',
+                        'height': '50px',
+                        'font-size': '28px',
                     }
                 })
                 stylesheet.append({
                         'selector': f'edge[source="{current_node_id}"]',
                         'style': {
-                            'target-arrow-color': 'red',  # Set the color of the target arrow
+                            'target-arrow-color': 'red',
                             'line-color': 'red',
                         }
                 })
                 if previous_node_id:
-                    # edge_id = previous_node_id+current_node_id
                     print(f"previous edge is {previous_node_id} to {current_node_id}")
                     stylesheet.append({
                         'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
                         'style': {
-                            'target-arrow-color': 'blue',  # Set the color of the target arrow
+                            'target-arrow-color': 'blue',
                             'line-color': 'blue',
                         }
                     })
@@ -373,9 +400,8 @@ class gramPrintListener(gramListener):
             if stylesheet:
                 for style in stylesheet:
                     if 'style' in style and 'background-color' in style['style']: # Get the value of the current node i.e. with a modified background
-                        # print(f"style is {style}")
                         curr_node_id = style['selector'][9:-2]
-                        next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
+                        next_node_id = self.next_state(curr_state_id=curr_node_id, action=None)
                         print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
                         return update_stylesheet(curr_node_id, next_node_id), iteration_str
             else:
@@ -400,7 +426,7 @@ class gramPrintListener(gramListener):
         transact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}",'action': t.action}} for t in self.transact]
         pre_actions = [{'data': {'source': t.src,'target': t.action}} for t in self.transact]
         post_actions = [{'data': {'source': t.action,'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transact]
-        edges = transnoact + pre_actions + post_actions #TODO Colour the 2 types of action related edges
+        edges = transnoact + pre_actions + post_actions #TODO Colour the 2 types of action related edges ?
         for e in edges:
             print(e)
 
@@ -408,13 +434,13 @@ class gramPrintListener(gramListener):
         time_interval = 3
 
         app.layout = html.Div([
-            html.P("Dash Cytoscape:"),
+            html.P("Dash Cytoscape:"), #TODO add the mdp file name here 
             html.Div(id='process-info'),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
                 layout={'name': 'circle'}, #'random' or 'circle'
-                style={'width': '900px', 'height': '800px'}, #TODO Ensure a nice display
+                style={'width': '900px', 'height': '800px'}, #TODO Ensure a nice display based on % of the screen rather than px?
             ),
             # html.Div(id='state-info'),
             # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
@@ -429,8 +455,6 @@ class gramPrintListener(gramListener):
         def update_stylesheet(previous_node_id, current_node_id):
             stylesheet = base_stylesheet_MDP.copy()
             log.info("\n  in update_stylesheet")
-            # if isinstance(current_node_id, dict):
-            #     current_node_id = current_node_id['id']
             if current_node_id:
                 print(f"node id is {current_node_id}")
                 stylesheet.append({
@@ -439,25 +463,27 @@ class gramPrintListener(gramListener):
                         'background-color': 'red',
                         'border-color': 'red',
                         'border-width': 1,
+                        'width': '80px',
+                        'height': '80px',
                     }
                 })
                 stylesheet.append({
                         'selector': f'edge[source="{current_node_id}"]',
                         'style': {
-                            'target-arrow-color': 'red',  # Set the color of the target arrow
+                            'target-arrow-color': 'red',
                             'line-color': 'red',
                         }
                 })
                 if previous_node_id:
-                    # edge_id = previous_node_id+current_node_id
                     print(f"previous edge is {previous_node_id} to {current_node_id}")
                     stylesheet.append({
                         'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
                         'style': {
-                            'target-arrow-color': 'blue',  # Set the color of the target arrow
+                            'target-arrow-color': 'blue',
                             'line-color': 'blue',
                         }
                     })
+                    #TODO make bigger previous and next edges ?
             return stylesheet
 
 
@@ -504,10 +530,10 @@ def main():
         printer.define_total_weights()
         if printer.is_DTMC():
             print("Graph type is DTMC\n")
-            mat = printer.generate_matrix_DTMC()
-            print('\n', mat, '\n')
+            # mat = printer.generate_matrix_DTMC()
+            # print('\n', mat, '\n')
 
-            printer.launch_server_DTMC(mat)
+            printer.launch_server_DTMC()
 
 
         else:
