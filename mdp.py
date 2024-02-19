@@ -263,6 +263,7 @@ class gramPrintListener(gramListener):
                         t.total_weight = total_weight
 
     def generate_matrix_DTMC(self):
+        #TODO To deprecate to be able to use MDP
         n = len(self.states)
         table = self.generate_table()
         res = np.zeros(shape=(n, n))
@@ -296,11 +297,7 @@ class gramPrintListener(gramListener):
                 x += probas[i]
         return N-1 # Ensure that even with an unfortunate rounding, it returns a value
 
-
-    def find_edge(edges, src, dst):
-        for edge in edges:
-            if edge['data']['source']==src and edge['data']['target']==dst:
-                return edge
+    #TODO add a legend for DTMC and for MDP graphs
 
     def launch_server_DTMC(self, mat):
         log.info("Launching server")
