@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import json
 import os
-
+import re
 from dash import Dash, html, dcc
 import dash_cytoscape as cyto
 from dash.dependencies import Input, Output, State
@@ -309,27 +309,40 @@ class gramPrintListener(gramListener):
 
     def choose_iteration(self, transitions):
         """Returns the resulting state id based on the possible transitions"""
+        #TODO Handle the case of no next transition, STOP the process ?
         weights = [t.weight for t in transitions]
         print(f"Weights are {weights}")
         p = choices(transitions, weights=weights)
-        print(p[0].dst)
+        # print(p[0].dst)
         return p[0].dst
 
     def next_state(self, curr_state_id, action):
         """Returns the id of the next state based on the current state and the chosen action if one"""
+        #TODO Need to add the possibility of multiple occurences of an action
+        #TODO Add a action-node couple system
         if action:
             trans = [t for t in self.transact if t.src==curr_state_id and t.action==action] 
         else:
-            trans = [t for t in self.transnoact if t.src==curr_state_id] #TODO Need to keep the order of the probas
+            trans = [t for t in self.transnoact if t.src==curr_state_id]
+        print("\n - Computing next state")
+        if trans==[]:
+            print(f"No transition from {curr_state_id}, staying here")
+            return curr_state_id
+        print(f"Current state is {curr_state_id}")
         next_state_id = self.choose_iteration(trans)
-        print(f"Res is {next_state_id}")
+        print(f"Next state is {next_state_id}")
+        print(" - End of next state computing\n")
+
         return next_state_id
 
     #TODO add a legend for DTMC and for MDP graphs
 
     def are_next_nodes_actions(self, curr_state_id):
-        
-        return 0
+        if curr_state_id:
+            for t in self.transact:
+                if t.src == curr_state_id:
+                    return True
+        return False
 
     def launch_server_DTMC(self):
         log.info("Launching server")
@@ -339,7 +352,7 @@ class gramPrintListener(gramListener):
         edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transnoact]
         # edges = [ {'data': {'source': t.src, 'target': t.dst, 'p': round(t.weight/t.total_weight, 2)}} for t in self.transnoact]
         starting_node_id = self.states[0]
-        time_interval = 5
+        time_interval = 10
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
@@ -422,21 +435,22 @@ class gramPrintListener(gramListener):
         log.info("Launching server")
         app = Dash(__name__)
         states = [{'data': {'id': s, 'label': s, 'type': 'state'}} for s in self.states]
-        actions = [{'data': {'id': a,'label': a,'type': 'action'}} for a in self.actions]
+        # actions = [{'data': {'id': a,'label': a,'type': 'action'}} for a in self.actions] #!DECREPATED
+        actions = [{'data': {'id': f'{t.src}:{t.action}','label': t.action,'type': 'action'}} for t in self.transact ]
         nodes = states + actions
         for n in nodes:
             print(n)
 
         transnoact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}"}} for t in self.transnoact]
-        transact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}",'action': t.action}} for t in self.transact]
-        pre_actions = [{'data': {'source': t.src,'target': t.action}} for t in self.transact]
-        post_actions = [{'data': {'source': t.action,'target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transact]
+        # transact = [{'data': {'source': t.src,'target': t.dst,'p': f"{t.weight}/{t.total_weight}",'action': t.action}} for t in self.transact]
+        pre_actions = [{'data': {'source': t.src,'target': f'{t.src}:{t.action}'}} for t in self.transact]
+        post_actions = [{'data': {'source': f'{t.src}:{t.action}','target': t.dst, 'p': f"{t.weight}/{t.total_weight}"}} for t in self.transact]
         edges = transnoact + pre_actions + post_actions #TODO Colour the 2 types of action related edges ?
         for e in edges:
             print(e)
 
         starting_node_id = self.states[0]
-        time_interval = 20
+        time_interval = 3
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"), #TODO add the mdp file name here 
@@ -445,7 +459,7 @@ class gramPrintListener(gramListener):
                 id='cytoscape',
                 elements=nodes + edges,
                 layout={'name': 'circle'}, #'random' or 'circle'
-                style={'width': '900px', 'height': '800px'}, #TODO Ensure a nice display based on % of the screen rather than px?
+                style={'width': '720px', 'height': '720px'}, #TODO Ensure a nice display based on % of the screen rather than px?
             ),
             # html.Div(id='state-info'),
             # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
@@ -458,9 +472,9 @@ class gramPrintListener(gramListener):
             
         def update_stylesheet(previous_node_id, current_node_id):
             stylesheet = base_stylesheet_MDP.copy()
-            log.info("\n  in update_stylesheet")
+            # log.info("\n  in update_stylesheet")
             if current_node_id:
-                print(f"node id is {current_node_id}")
+                # print(f"    current node id is {current_node_id}")
                 stylesheet.append({
                     'selector': f'node[id="{current_node_id}"]',
                     'style': {
@@ -479,7 +493,7 @@ class gramPrintListener(gramListener):
                         }
                 })
                 if previous_node_id:
-                    print(f"previous edge is {previous_node_id} to {current_node_id}")
+                    print(f"    previous edge is {previous_node_id} to {current_node_id}")
                     stylesheet.append({
                         'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
                         'style': {
@@ -488,52 +502,84 @@ class gramPrintListener(gramListener):
                         }
                     })
                     #TODO make bigger previous and next edges ?
+            print()
             return stylesheet
 
 
         @app.callback(
-            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children'), Output("interval", "disabled")],
             [Input('interval', 'n_intervals'), Input('cytoscape', 'tapNodeData'), Input('cytoscape', 'stylesheet')],
             prevent_initial_call=False,
         )
         def next_node(n_intervals, tapped_node, stylesheet):
-            log.info("\n  in next_node")
+            log.info("### Choosing next node ###")
             iteration_str = f"Currently at iteration {n_intervals}"
             if tapped_node:
-                print(f"tapped node is {tapped_node}")
+                print(f"    tapped node is {tapped_node}")
             else:
-                print("no node")
-            # return update_stylesheet(None, starting_node_id), iteration_str
+                print(f"    no node tapped")
 
-            print(iteration_str)
+            to_disable = False
+            
+            # return update_stylesheet(None, starting_node_id), iteration_str
+            #TODO allow waiting in a state with actions and keep the previous state for the next iterations
+            # print(iteration_str)
+            curr_node_id = None
+            prev_node_id = None
             if stylesheet:
                 for style in stylesheet:
-                    if style['style'].get('background-color')=='red': # Get the value of the current node i.e. with a modified background
-                        # print(f"style is {style}")
+                    # print(style)
+                    if not prev_node_id and style['style'].get('line-color')=='blue': # Get the value of the previous node i.e. with a blue background
+                        pattern = r'edge\[source="(\w+:?\w+)"\]\[target="\w+:?\w+"\]'
+                        match = re.search(pattern, style['selector'])
+                        if match:
+                            prev_node_id = match.group(1)
+                            print(f"    prev_node is {prev_node_id}")
+                    if not curr_node_id and style['style'].get('background-color')=='red': # Get the value of the current node i.e. with a red background
                         curr_node_id = style['selector'][9:-2]
-                        break # We found the current node
-            
-            if self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap  on an action node
-                if tapped_node['type']=='action': # We tapped an anction
+                        print(f"    curr_node is {curr_node_id}")
 
+            if not curr_node_id: # No node selected
+                print("--> Graph initialized")
+                return update_stylesheet(None, starting_node_id), iteration_str, False #?
+
+            #TODO Add comments 
+            #TODO Clean code
+            print(f"actions ? for node {curr_node_id}: {self.are_next_nodes_actions(curr_node_id)}")
+            print(tapped_node and tapped_node.get('type', '')=='action')
+
+
+            if self.are_next_nodes_actions(prev_node_id):
+                source, action = curr_node_id.split(':')
+                next_node_id = self.next_state(source, action) 
+                return update_stylesheet(curr_node_id, next_node_id), iteration_str, self.are_next_nodes_actions(next_node_id)
+
+            elif self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap  on an action node
+                if tapped_node and tapped_node.get('type', '')=='action': # We tapped an action #TODO Check that tapped action is available
+                    action = tapped_node.get('id', None)
+                    print(action)
+                    if action:
+                        return update_stylesheet(curr_node_id, action), iteration_str, False
+                        # next_node_id = self.next_state(curr_state_id=curr_node_id, action=action)
+                        # print(f"    Chosen action {action}, next node id is {next_node_id}, waiting {time_interval}s")
+                        # return update_stylesheet(curr_node_id, next_node_id), iteration_str
+                    #TODO handle conflicts between tapped nodes and timing
                     #TODO Select the next node using the corresponding probabilities
+                # else:
+                #     print('    no node tapped')
+                #     return update_stylesheet(prev_node_id, curr_node_id), iteration_str, True
 
-
-                    return update_stylesheet(None, starting_node_id), iteration_str #?
-
-
+            else:
+                next_node_id = self.next_state(curr_state_id=curr_node_id, action=None)
+                print(f"    Next node id is {next_node_id}, waiting {time_interval}s")
+                return update_stylesheet(curr_node_id, next_node_id), iteration_str, self.are_next_nodes_actions(next_node_id)
 
 
 
                 next_node_id = curr_node_id
-                # next_node_id = self.next_state_DTMC(curr_state_id=curr_node_id, proba_matrix=mat)
-                print(f"Next node id is {next_node_id}, waiting {time_interval}s\n")
+                print(f"    Next node id is {next_node_id}, waiting {time_interval}s\n")
                 return update_stylesheet(curr_node_id, next_node_id), iteration_str
             
-
-            else:
-                print("Only for init")
-                return update_stylesheet(None, starting_node_id), iteration_str
     
 
         # @app.callback(
@@ -567,9 +613,9 @@ def main():
     tree = parser.program()
     printer = gramPrintListener()
     walker = ParseTreeWalker()
-    print('Before\n')
+    # print('Before\n')
     walker.walk(printer, tree)
-    print('\nAfter\n')
+    # print('\nAfter\n')
     if printer.check_validity():
         printer.define_total_weights()
         if printer.is_DTMC():
