@@ -520,7 +520,8 @@ class gramPrintListener(gramListener):
                 print(f"    no node tapped")
 
             to_disable = False
-            
+            #TODO Add a button to enable/disable the timer 
+
             # return update_stylesheet(None, starting_node_id), iteration_str
             #TODO allow waiting in a state with actions and keep the previous state for the next iterations
             # print(iteration_str)
