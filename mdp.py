@@ -118,8 +118,6 @@ base_stylesheet_MDP = [
 ]
 
 
-#TODO Color potential edges
-#TODO Color last edge
 
 class Transition():
 
@@ -311,27 +309,26 @@ class gramPrintListener(gramListener):
         """Returns the resulting state id based on the possible transitions"""
         #TODO Handle the case of no next transition, STOP the process ?
         weights = [t.weight for t in transitions]
-        print(f"Weights are {weights}")
+        dests = [t.dst for t in transitions]
+        print(f"\tWeights are {weights} for {dests}")
         p = choices(transitions, weights=weights)
         # print(p[0].dst)
         return p[0].dst
 
     def next_state(self, curr_state_id, action):
         """Returns the id of the next state based on the current state and the chosen action if one"""
-        #TODO Need to add the possibility of multiple occurences of an action
-        #TODO Add a action-node couple system
         if action:
             trans = [t for t in self.transact if t.src==curr_state_id and t.action==action] 
         else:
             trans = [t for t in self.transnoact if t.src==curr_state_id]
-        print("\n - Computing next state")
+        print("\n\t - Computing next state")
         if trans==[]:
-            print(f"No transition from {curr_state_id}, staying here")
+            print(f"\tNo transition from {curr_state_id}, staying here")
             return curr_state_id
-        print(f"Current state is {curr_state_id}")
+        print(f"\tCurrent state is {curr_state_id}")
         next_state_id = self.choose_iteration(trans)
-        print(f"Next state is {next_state_id}")
-        print(" - End of next state computing\n")
+        print(f"\tNext state is {next_state_id}")
+        print("\t - End of next state computing\n")
 
         return next_state_id
 
@@ -377,7 +374,7 @@ class gramPrintListener(gramListener):
             stylesheet = base_stylesheet_DTMC.copy()
             log.info("\n  in update_stylesheet")
             if current_node_id:
-                print(f"node id is {current_node_id}")
+                print(f"\tnode id is {current_node_id}")
                 stylesheet.append({
                     'selector': f'node[id="{current_node_id}"]',
                     'style': {
@@ -390,15 +387,17 @@ class gramPrintListener(gramListener):
                 stylesheet.append({
                         'selector': f'edge[source="{current_node_id}"]',
                         'style': {
+                            'color': 'red',
                             'target-arrow-color': 'red',
                             'line-color': 'red',
                         }
                 })
                 if previous_node_id:
-                    print(f"previous edge is {previous_node_id} to {current_node_id}")
+                    print(f"\tprevious edge is {previous_node_id} to {current_node_id}")
                     stylesheet.append({
                         'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
                         'style': {
+                            'color': 'blue',
                             'target-arrow-color': 'blue',
                             'line-color': 'blue',
                         }
@@ -449,7 +448,7 @@ class gramPrintListener(gramListener):
         for e in edges:
             print(e)
 
-        starting_node_id = self.states[0]
+        starting_node_id = self.states[0] # Initial state is the first one by convention
         time_interval = 3
 
         app.layout = html.Div([
@@ -458,7 +457,7 @@ class gramPrintListener(gramListener):
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
-                layout={'name': 'circle'}, #'random' or 'circle'
+                layout={'name': 'random'}, #'random' or 'circle' #TODO Search a better layout
                 style={'width': '720px', 'height': '720px'}, #TODO Ensure a nice display based on % of the screen rather than px?
             ),
             # html.Div(id='state-info'),
@@ -471,6 +470,7 @@ class gramPrintListener(gramListener):
         ])
             
         def update_stylesheet(previous_node_id, current_node_id):
+            #TODO Unify this and the DTMC version ?
             stylesheet = base_stylesheet_MDP.copy()
             # log.info("\n  in update_stylesheet")
             if current_node_id:
@@ -488,15 +488,17 @@ class gramPrintListener(gramListener):
                 stylesheet.append({
                         'selector': f'edge[source="{current_node_id}"]',
                         'style': {
+                            'color': 'red',
                             'target-arrow-color': 'red',
                             'line-color': 'red',
                         }
                 })
                 if previous_node_id:
-                    print(f"    previous edge is {previous_node_id} to {current_node_id}")
+                    print(f"\tprevious edge is {previous_node_id} to {current_node_id}")
                     stylesheet.append({
                         'selector': f'edge[source="{previous_node_id}"][target="{current_node_id}"]',
                         'style': {
+                            'color': 'blue',
                             'target-arrow-color': 'blue',
                             'line-color': 'blue',
                         }
@@ -535,10 +537,10 @@ class gramPrintListener(gramListener):
                         match = re.search(pattern, style['selector'])
                         if match:
                             prev_node_id = match.group(1)
-                            print(f"    prev_node is {prev_node_id}")
+                            print(f"\tprev_node is {prev_node_id}")
                     if not curr_node_id and style['style'].get('background-color')=='red': # Get the value of the current node i.e. with a red background
                         curr_node_id = style['selector'][9:-2]
-                        print(f"    curr_node is {curr_node_id}")
+                        print(f"\tcurr_node is {curr_node_id}")
 
             if not curr_node_id: # No node selected
                 print("--> Graph initialized")
@@ -546,17 +548,18 @@ class gramPrintListener(gramListener):
 
             #TODO Add comments 
             #TODO Clean code
-            print(f"actions ? for node {curr_node_id}: {self.are_next_nodes_actions(curr_node_id)}")
-            print(tapped_node and tapped_node.get('type', '')=='action')
+            # print(f"\tactions ? for node {curr_node_id}: {self.are_next_nodes_actions(curr_node_id)}")
+            # print(f"\t{tapped_node and tapped_node.get('type', '')=='action'}")
 
 
             if self.are_next_nodes_actions(prev_node_id):
-                source, action = curr_node_id.split(':')
+                print("\tCurrently in an action")
+                source, action = curr_node_id.split(':') # Current node is an action thus in 'source:action' format
                 next_node_id = self.next_state(source, action) 
                 return update_stylesheet(curr_node_id, next_node_id), iteration_str, self.are_next_nodes_actions(next_node_id)
 
-            elif self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap  on an action node
-                if tapped_node and tapped_node.get('type', '')=='action': # We tapped an action #TODO Check that tapped action is available
+            elif self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap on an action node
+                if tapped_node and tapped_node.get('type', '')=='action': # We tapped an action
                     action = tapped_node.get('id', None)
                     print(action)
                     if action:
