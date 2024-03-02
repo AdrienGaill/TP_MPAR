@@ -353,7 +353,7 @@ class gramPrintListener(gramListener):
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
-            html.Div(id='process-info'),
+            html.Div(id='iteration-counter'),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
@@ -406,7 +406,7 @@ class gramPrintListener(gramListener):
 
 
         @app.callback(
-            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+            [Output('cytoscape', 'stylesheet'), Output('iteration-counter', 'children')],
             [Input('interval', 'n_intervals'), Input('cytoscape', 'stylesheet')],
             prevent_initial_call=False,
         )
@@ -452,8 +452,9 @@ class gramPrintListener(gramListener):
         time_interval = 3
 
         app.layout = html.Div([
-            html.P("Dash Cytoscape:"), #TODO add the mdp file name here 
-            html.Div(id='process-info'),
+            html.P("Dash Cytoscape:"),
+            html.Div(id='iteration-counter'),
+            html.Div(id='status'),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
@@ -509,23 +510,30 @@ class gramPrintListener(gramListener):
 
 
         @app.callback(
-            [Output('cytoscape', 'stylesheet'), Output('process-info', 'children'), Output("interval", "disabled")],
-            [Input('interval', 'n_intervals'), Input('cytoscape', 'tapNodeData'), Input('cytoscape', 'stylesheet')],
+            [
+                Output('cytoscape', 'stylesheet'),
+                Output('iteration-counter', 'children'),
+                Output('status', 'children'),
+                Output("interval", "disabled"),
+            ],[
+                Input('interval', 'n_intervals'),
+                Input('cytoscape', 'tapNodeData'),
+                Input('cytoscape', 'stylesheet')
+            ],
             prevent_initial_call=False,
         )
         def next_node(n_intervals, tapped_node, stylesheet):
             log.info("### Choosing next node ###")
             iteration_str = f"Currently at iteration {n_intervals}"
             if tapped_node:
-                print(f"    tapped node is {tapped_node}")
+                print(f"\ttapped node is {tapped_node}")
             else:
-                print(f"    no node tapped")
+                print(f"\tno node tapped")
 
             to_disable = False
             #TODO Add a button to enable/disable the timer 
 
             # return update_stylesheet(None, starting_node_id), iteration_str
-            #TODO allow waiting in a state with actions and keep the previous state for the next iterations
             # print(iteration_str)
             curr_node_id = None
             prev_node_id = None
@@ -544,7 +552,7 @@ class gramPrintListener(gramListener):
 
             if not curr_node_id: # No node selected
                 print("--> Graph initialized")
-                return update_stylesheet(None, starting_node_id), iteration_str, False #?
+                return update_stylesheet(None, starting_node_id), iteration_str, 'Graph initialized', False #?
 
             #TODO Add comments 
             #TODO Clean code
@@ -556,27 +564,34 @@ class gramPrintListener(gramListener):
                 print("\tCurrently in an action")
                 source, action = curr_node_id.split(':') # Current node is an action thus in 'source:action' format
                 next_node_id = self.next_state(source, action) 
-                return update_stylesheet(curr_node_id, next_node_id), iteration_str, self.are_next_nodes_actions(next_node_id)
+                return update_stylesheet(curr_node_id, next_node_id), iteration_str, '\n', self.are_next_nodes_actions(next_node_id)
 
             elif self.are_next_nodes_actions(curr_node_id): # We are in a action choosing step and waiting for a tap on an action node
                 if tapped_node and tapped_node.get('type', '')=='action': # We tapped an action
                     action = tapped_node.get('id', None)
-                    print(action)
+                    print(f"\taction is {action}")
+
+                    source = action.split(':')[0]
+                    print(f"RES {source} {curr_node_id}")
+                    if source != curr_node_id: #TODO Refactor this
+                        print('\twrong action tapped')
+                        return update_stylesheet(prev_node_id, curr_node_id), iteration_str, 'Wrong action tapped', True
+
+        #TODO Improve status text zone
+
                     if action:
-                        return update_stylesheet(curr_node_id, action), iteration_str, False
+                        return update_stylesheet(curr_node_id, action), '', iteration_str, False
                         # next_node_id = self.next_state(curr_state_id=curr_node_id, action=action)
                         # print(f"    Chosen action {action}, next node id is {next_node_id}, waiting {time_interval}s")
                         # return update_stylesheet(curr_node_id, next_node_id), iteration_str
-                    #TODO handle conflicts between tapped nodes and timing
-                    #TODO Select the next node using the corresponding probabilities
-                # else:
-                #     print('    no node tapped')
-                #     return update_stylesheet(prev_node_id, curr_node_id), iteration_str, True
+                else:
+                    print('\taction needed but tapped node is not')
+                    return update_stylesheet(prev_node_id, curr_node_id), iteration_str, 'Tapped node is not an action', True
 
             else:
                 next_node_id = self.next_state(curr_state_id=curr_node_id, action=None)
-                print(f"    Next node id is {next_node_id}, waiting {time_interval}s")
-                return update_stylesheet(curr_node_id, next_node_id), iteration_str, self.are_next_nodes_actions(next_node_id)
+                print(f"\tNext node id is {next_node_id}, waiting {time_interval}s")
+                return update_stylesheet(curr_node_id, next_node_id), iteration_str, '\n', self.are_next_nodes_actions(next_node_id)
 
 
 
@@ -587,7 +602,7 @@ class gramPrintListener(gramListener):
     
 
         # @app.callback(
-        #         [Output('cytoscape', 'stylesheet'), Output('process-info', 'children')],
+        #         [Output('cytoscape', 'stylesheet'), Output('iteration-counter', 'children')],
         #         [Input('interval', 'n_intervals'), Input('cytoscape', 'tapNodeData'), Input('cytoscape', 'stylesheet')],
         #         prevent_initial_call=False,
         # )
