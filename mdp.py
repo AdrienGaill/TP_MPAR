@@ -7,7 +7,8 @@ import numpy as np
 import json
 import os
 import re
-from dash import Dash, html, dcc
+from dash import Dash, html, dcc, ctx
+import dash_daq as daq
 import dash_cytoscape as cyto
 from dash.dependencies import Input, Output, State
 
@@ -453,21 +454,29 @@ class gramPrintListener(gramListener):
 
         app.layout = html.Div([
             html.P("Dash Cytoscape:"),
-            html.Div(id='iteration-counter'),
-            html.Div(id='status'),
+            html.Div([
+                html.Div(id='iteration-counter'),
+                html.Div(id='status'),
+                daq.ToggleSwitch(
+                    id='toggle-switch',
+                    value=True,
+                    label='Autonomous route',
+                    labelPosition='bottom',
+                    # vertical=True,
+                    color='grey',
+                ), #TODO Improve layout of this button
+            ]),
             cyto.Cytoscape(
                 id='cytoscape',
                 elements=nodes + edges,
-                layout={'name': 'random'}, #'random' or 'circle' #TODO Search a better layout
+                layout={'name': 'grid'}, #'random' or 'circle' #TODO Search a better layout
                 style={'width': '720px', 'height': '720px'}, #TODO Ensure a nice display based on % of the screen rather than px?
             ),
-            # html.Div(id='state-info'),
-            # dcc.Store(id='iteration-counter', data=0), # Store the iteration number
             dcc.Interval(
                 id='interval',
                 interval=time_interval*1000, # in milliseconds
                 n_intervals=0,
-            )
+            ),
         ])
             
         def update_stylesheet(previous_node_id, current_node_id):
@@ -518,11 +527,13 @@ class gramPrintListener(gramListener):
             ],[
                 Input('interval', 'n_intervals'),
                 Input('cytoscape', 'tapNodeData'),
-                Input('cytoscape', 'stylesheet')
+                Input('cytoscape', 'stylesheet'),
+                Input('toggle-switch', 'value'),
             ],
             prevent_initial_call=False,
         )
-        def next_node(n_intervals, tapped_node, stylesheet):
+        def next_node(n_intervals, tapped_node, stylesheet, switch_value):
+
             log.info("### Choosing next node ###")
             iteration_str = f"Currently at iteration {n_intervals}"
             if tapped_node:
@@ -558,6 +569,10 @@ class gramPrintListener(gramListener):
             #TODO Clean code
             # print(f"\tactions ? for node {curr_node_id}: {self.are_next_nodes_actions(curr_node_id)}")
             # print(f"\t{tapped_node and tapped_node.get('type', '')=='action'}")
+
+            if ctx.triggered_id and ctx.triggered_id=='toggle-switch':
+                print(f"Autonomous route is set to {switch_value}")
+                return update_stylesheet(prev_node_id, curr_node_id), iteration_str, '\n', not switch_value
 
 
             if self.are_next_nodes_actions(prev_node_id):
